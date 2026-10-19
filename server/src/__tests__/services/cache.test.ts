@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { initDb, setSetting, getDb } from '../../db/index.js';
+import { initDb, setSetting, getDb, runWithUserDatabase } from '../../db/index.js';
 import {
   computeCacheKey,
   getCachedResponse,
@@ -86,6 +86,21 @@ describe('response cache', () => {
     it('changes when the prompt changes', () => {
       expect(computeCacheKey({ model: 'auto', messages: [msg('user', 'a')] }))
         .not.toBe(computeCacheKey({ model: 'auto', messages: [msg('user', 'b')] }));
+    });
+
+    it('isolates identical requests between tenant databases', () => {
+      const identityDb = getDb();
+      const firstUserId = Number(identityDb.prepare(
+        "INSERT INTO users (email, password_hash) VALUES ('first@example.test', 'test')",
+      ).run().lastInsertRowid);
+      const secondUserId = Number(identityDb.prepare(
+        "INSERT INTO users (email, password_hash) VALUES ('second@example.test', 'test')",
+      ).run().lastInsertRowid);
+      const input = { model: 'auto', messages: [msg('user', 'private prompt')] };
+      const firstKey = runWithUserDatabase(firstUserId, () => computeCacheKey(input));
+      const secondKey = runWithUserDatabase(secondUserId, () => computeCacheKey(input));
+
+      expect(firstKey).not.toBe(secondKey);
     });
 
     it('changes when sampling params change', () => {

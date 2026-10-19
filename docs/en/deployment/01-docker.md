@@ -7,6 +7,7 @@ The production image, the Compose quickstart, and everything about running FreeL
 - [The image](#the-image)
 - [Compose quickstart](#compose-quickstart)
 - [Ports & LAN access](#ports--lan-access)
+- [Multi-user Authentik login](#multi-user-authentik-login)
 - [Volumes & persistence](#volumes--persistence)
 - [Healthcheck](#healthcheck)
 - [Non-root runtime](#non-root-runtime)
@@ -62,11 +63,26 @@ The compose file publishes `"${HOST_BIND:-127.0.0.1}:${PORT:-3001}:3001"`. By de
 HOST_BIND=0.0.0.0 docker compose up -d
 ```
 
-Only do this on a trusted network — the proxy is single-user and guarded only by the unified API key.
+For public multi-user access, configure Authentik OIDC and terminate HTTPS at a reverse proxy.
+
+## Multi-user Authentik login
+
+The first dashboard account continues to own its existing SQLite data. Each additional OIDC account receives a separate SQLite database for provider keys, fallback chains, profiles, settings, logs, and analytics. Client API keys are individually issued and revocable from **Settings → API access**.
+
+Create an OpenID Connect provider and application in Authentik with the `openid`, `email`, and `profile` scopes and a verified email claim. Set these in `.env`:
+
+```dotenv
+OIDC_ISSUER=https://auth.example.com/application/o/freellmapi/
+OIDC_CLIENT_ID=freellmapi
+OIDC_CLIENT_SECRET=replace-with-client-secret
+OIDC_REDIRECT_URI=https://freellmapi.example.com/api/auth/oidc/callback
+```
+
+Register the exact redirect URI with Authentik, keep `.env` private, and put the service behind HTTPS before making it internet-accessible. Local password login remains available for the existing account. After signing in through Authentik, add your own provider keys and fallback chain in the dashboard, then create a client API key in **Settings → API access**. Use that key as the Bearer credential for `/v1/chat/completions`.
 
 ## Volumes & persistence
 
-SQLite data lives in the named volume `freellmapi-data`, mounted at `/app/server/data`. Keep the same `.env` `ENCRYPTION_KEY` and the same volume when upgrading, because provider keys are encrypted at rest. If your host only persists one specific directory, point the database there with `FREEAPI_DB_PATH=/that/path/freellmapi.db`.
+SQLite data lives in the named volume `freellmapi-data`, mounted at `/app/server/data`; tenant databases live under its `tenants/` directory. Keep the same `.env` `ENCRYPTION_KEY` and the same volume when upgrading, because provider keys are encrypted at rest. If your host only persists one specific directory, point the database there with `FREEAPI_DB_PATH=/that/path/freellmapi.db`.
 
 The Dockerfile declares **no** `VOLUME` for `/app/server/data` on purpose. Persistence is the deployment's job — the compose file maps the named volume there, and plain `docker run` takes `-v`. Declaring it in the image instead would create an ANONYMOUS volume on every container that doesn't override it: PaaS runtimes that build from the Dockerfile (Railway, Render, Coolify, Dokploy, CapRover) would then either refuse the image or silently hand each redeploy a fresh empty volume, and the declaration would also shadow a bind mount made at the same path.
 

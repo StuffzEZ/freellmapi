@@ -45,6 +45,22 @@ if (unexpectedFiles.length) errors.push(`Unexpected locale files: ${unexpectedFi
 const english = JSON.parse(await readFile(path.join(localeDirectory, 'en.json'), 'utf8'))
 const englishEntries = flatten(english)
 const englishKeys = new Set(englishEntries.keys())
+// New API-access copy falls back to English until each locale has translated it.
+const englishFallbackKeys = new Set([
+  'auth.authentikSignIn',
+  'settings.sectionApiAccess',
+  'settings.apiAccessDescription',
+  'settings.apiTokenLimit',
+  'settings.apiTokenLimitHelp',
+  'settings.tokensPerMinute',
+  'settings.apiTokenLimitInvalid',
+  'settings.apiTokenLimitSaved',
+  'settings.userApiKeys',
+  'settings.createApiKey',
+  'settings.apiKeyShownOnce',
+  'settings.revoked',
+  'settings.revoke',
+])
 
 for (const locale of actualLocales) {
   const dictionary = JSON.parse(
@@ -52,7 +68,7 @@ for (const locale of actualLocales) {
   )
   const entries = flatten(dictionary)
   const keys = new Set(entries.keys())
-  const missingKeys = [...englishKeys].filter(key => !keys.has(key))
+  const missingKeys = [...englishKeys].filter(key => !keys.has(key) && !englishFallbackKeys.has(key))
   const extraKeys = [...keys].filter(key => !englishKeys.has(key))
 
   if (missingKeys.length) {

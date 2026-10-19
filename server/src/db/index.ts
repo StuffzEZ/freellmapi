@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'url';
 import { runMigrationsSync } from './migrate/runner.js';
@@ -16,12 +17,61 @@ const DB_PATH = path.resolve(__dirname, '../../data/freeapi.db');
 const runtimeRequire = createRequire(import.meta.url);
 
 let db: Db;
+const requestDb = new AsyncLocalStorage<Db>();
+const tenantDbs = new Map<number, Db>();
 
 export function getDb(): Db {
+  const scopedDb = requestDb.getStore();
+  if (scopedDb) return scopedDb;
   if (!db) {
     throw new Error('Database not initialized. Call initDb() or connectDb() first.');
   }
   return db;
+}
+
+/** The primary database owns account identities and login sessions. */
+export function getIdentityDb(): Db {
+  if (!db) {
+    throw new Error('Database not initialized. Call initDb() or connectDb() first.');
+  }
+  return db;
+}
+
+/**
+ * Run one request against the requesting user's independent SQLite database.
+ * The primary account continues using the original database so existing
+ * installs retain their data; additional accounts receive a freshly migrated
+ * database under the primary data directory.
+ */
+export function runWithUserDatabase<T>(userId: number, callback: () => T): T {
+  if (!Number.isSafeInteger(userId) || userId < 1) {
+    throw new Error('Invalid user id for tenant database');
+  }
+  return requestDb.run(getUserDatabase(userId), callback);
+}
+
+function getUserDatabase(userId: number): Db {
+  const primary = getIdentityDb();
+  const owner = primary.prepare('SELECT id FROM users ORDER BY id LIMIT 1').get() as { id: number } | undefined;
+  if (owner?.id === userId) return primary;
+  const existing = tenantDbs.get(userId);
+  if (existing) return existing;
+
+  const primaryPath = primary.name || getDefaultDbPath();
+  const tenantPath = primaryPath === ':memory:'
+    ? ':memory:'
+    : path.join(path.dirname(primaryPath), 'tenants', `user-${userId}.db`);
+  let tenant: Db | undefined;
+  try {
+    tenant = openDbConnection(tenantPath);
+    runMigrationsSync(tenant, 'up');
+    if (!isEncryptionKeyInitialized()) initEncryptionKey(tenant);
+    tenantDbs.set(userId, tenant);
+    return tenant;
+  } catch (error) {
+    tenant?.close?.();
+    throw error;
+  }
 }
 
 export function getDefaultDbPath(): string {
@@ -56,7 +106,20 @@ export function connectDb(
     factory?: DbFactory;
   },
 ): Db {
+  for (const tenant of tenantDbs.values()) tenant.close?.();
+  tenantDbs.clear();
   const resolvedPath = dbPath ?? getDefaultDbPath();
+  db = openDbConnection(resolvedPath, opts);
+  return db;
+}
+
+function openDbConnection(
+  resolvedPath: string,
+  opts?: {
+    ensureDir?: boolean;
+    factory?: DbFactory;
+  },
+): Db {
   const isMemory = resolvedPath === ':memory:';
   const ensureDir = opts?.ensureDir ?? true;
   const factory = opts?.factory ?? defaultDbFactory();
@@ -78,18 +141,18 @@ export function connectDb(
     restrictDataDir(dataDir, created);
   }
 
-  db = factory(resolvedPath);
-  if (!isMemory) db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
+  const connection = factory(resolvedPath);
+  if (!isMemory) connection.pragma('journal_mode = WAL');
+  connection.pragma('foreign_keys = ON');
   // The dashboard and the proxy hot path write concurrently; without a busy
   // timeout the loser of a write race gets SQLITE_BUSY immediately and the
   // request fails. Five seconds is far longer than any write here takes.
-  db.pragma('busy_timeout = 5000');
+  connection.pragma('busy_timeout = 5000');
 
   if (!isMemory) restrictDbFilePermissions(resolvedPath);
 
   console.log(`Database initialized at ${resolvedPath}`);
-  return db;
+  return connection;
 }
 
 /**

@@ -17,6 +17,7 @@ import {
 } from '../services/auth.js';
 import { setupCodeMatches, clearSetupCode } from '../lib/setup-code.js';
 import { generateResetCode, resetCodeMatches, clearResetCode } from '../lib/reset-code.js';
+import { oidcEnabled } from '../services/oidc.js';
 
 export const authRouter = Router();
 
@@ -194,6 +195,7 @@ authRouter.get('/status', (req: Request, res: Response) => {
     authenticated: !!session,
     email: session?.email ?? null,
     desktop: desktopSignInAllowed(req),
+    oidcEnabled: oidcEnabled(),
   });
 });
 
