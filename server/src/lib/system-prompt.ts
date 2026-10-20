@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import type { ChatMessage } from '@freellmapi/shared/types.js';
 import { getDb, getUnifiedApiKey } from '../db/index.js';
+import { resolveUserApiKey } from '../services/user-access.js';
 
 // Per-client API keys with server-enforced system prompts (#411). A client
 // profile is a second kind of inference credential: it authenticates ONLY the
@@ -38,6 +39,7 @@ export function hashClientProfileKey(key: string): string {
 
 export type ResolvedAuth =
   | { kind: 'unified'; systemPrompt: null }
+  | { kind: 'user'; userId: number; systemPrompt: null }
   | { kind: 'profile'; profileId: number; name: string; systemPrompt: string | null };
 
 interface ProfileRow {
@@ -55,13 +57,15 @@ interface ProfileRow {
  */
 export function resolveAuth(token: string | undefined): ResolvedAuth | null {
   if (!token) return null;
+  const userId = resolveUserApiKey(token);
+  if (userId != null) return { kind: 'user', userId, systemPrompt: null };
   if (timingSafeStringEqual(token, getUnifiedApiKey())) {
     return { kind: 'unified', systemPrompt: null };
   }
   if (!token.startsWith(CLIENT_PROFILE_KEY_PREFIX)) return null;
-  const row = getDb().prepare(
+  const row = (getDb().prepare(
     'SELECT id, name, system_prompt, enabled FROM client_profiles WHERE token_hash = ?',
-  ).get(hashClientProfileKey(token)) as ProfileRow | undefined;
+  ).get(hashClientProfileKey(token)) as ProfileRow | undefined);
   if (!row || !row.enabled) return null;
   const prompt = row.system_prompt != null && row.system_prompt.trim().length > 0
     ? row.system_prompt

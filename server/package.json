@@ -1,6 +1,6 @@
 {
   "name": "@freellmapi/server",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "scripts": {
@@ -28,6 +28,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.1.0",
     "helmet": "^8.1.0",
+    "jose": "^6.2.12",
     "multer": "^2.2.0",
     "sharp": "^0.35.3",
     "socks-proxy-agent": "^10.0.0",

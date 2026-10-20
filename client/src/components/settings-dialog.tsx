@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import {
   Check,
   ChevronsUpDown,
+  Copy,
   FlaskConical,
   Gauge,
   Info,
+  KeyRound,
   Loader2,
   Monitor,
   Moon,
   Search,
   SlidersHorizontal,
   Sun,
+  Trash2,
   Wrench,
   X,
 } from 'lucide-react'
@@ -279,10 +282,11 @@ const ENGINES = [
   { id: 'hard-budget', tKey: 'engineHardBudget', lossless: false },
 ] as const
 
-type SectionId = 'general' | 'compression' | 'advanced' | 'preview'
+type SectionId = 'general' | 'api-access' | 'compression' | 'advanced' | 'preview'
 
 const SECTIONS = [
   { id: 'general', tKey: 'sectionGeneral', icon: SlidersHorizontal },
+  { id: 'api-access', tKey: 'sectionApiAccess', icon: KeyRound },
   { id: 'compression', tKey: 'sectionCompression', icon: Gauge },
   { id: 'advanced', tKey: 'sectionAdvanced', icon: Wrench },
   { id: 'preview', tKey: 'sectionPreview', icon: FlaskConical },
@@ -576,6 +580,193 @@ function GeneralSection() {
   )
 }
 
+interface UserApiKey {
+  id: number
+  label: string
+  prefix: string
+  createdAt: string
+  lastUsedAt: number | null
+  revokedAt: number | null
+}
+
+function ApiAccessSection() {
+  const { t } = useI18n()
+  const [keys, setKeys] = useState<UserApiKey[]>([])
+  const [limit, setLimit] = useState('60000')
+  const [newToken, setNewToken] = useState('')
+  const [newTokenId, setNewTokenId] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
+
+  useEffect(() => {
+    let active = true
+    apiFetch<{ tokensPerMinute: number; apiKeys: UserApiKey[] }>('/api/account/access')
+      .then(data => {
+        if (!active) return
+        setLimit(String(data.tokensPerMinute))
+        setKeys(data.apiKeys)
+      })
+      .catch(reason => {
+        if (active) setError(reason instanceof Error ? reason.message : t('common.unknownError'))
+      })
+    return () => { active = false }
+  }, [t])
+
+  async function createKey() {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      const result = await apiFetch<{ id: number; token: string }>('/api/account/access/keys', {
+        method: 'POST',
+        body: JSON.stringify({ label: 'Default' }),
+      })
+      setNewToken(result.token)
+      setNewTokenId(result.id)
+      const fresh = await apiFetch<{ tokensPerMinute: number; apiKeys: UserApiKey[] }>('/api/account/access')
+      setKeys(fresh.apiKeys)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t('common.unknownError'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function revokeKey(keyId: number) {
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      await apiFetch(`/api/account/access/keys/${keyId}`, { method: 'DELETE' })
+      setKeys(current => current.map(key => key.id === keyId ? { ...key, revokedAt: Date.now() } : key))
+      if (newTokenId === keyId) {
+        setNewToken('')
+        setNewTokenId(null)
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t('common.unknownError'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function saveLimit() {
+    const tokensPerMinute = Number(limit)
+    if (!Number.isSafeInteger(tokensPerMinute) || tokensPerMinute < 0 || tokensPerMinute > 1_000_000_000) {
+      setError(t('settings.apiTokenLimitInvalid'))
+      return
+    }
+    setBusy(true)
+    setError('')
+    setNotice('')
+    try {
+      await apiFetch('/api/account/access/token-limit', {
+        method: 'PUT',
+        body: JSON.stringify({ tokensPerMinute }),
+      })
+      setNotice(t('settings.apiTokenLimitSaved'))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t('common.unknownError'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function copyToken() {
+    try {
+      await navigator.clipboard.writeText(newToken)
+      setNotice(t('common.copied'))
+    } catch {
+      setError(t('common.copyFailed'))
+    }
+  }
+
+  return (
+    <>
+      <SectionHeader
+        title={t('settings.sectionApiAccess')}
+        description={t('settings.apiAccessDescription')}
+      />
+      <Row label={t('settings.apiTokenLimit')} hint={t('settings.apiTokenLimitHelp')}>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            max={1_000_000_000}
+            step={1}
+            value={limit}
+            onChange={event => setLimit(event.target.value)}
+            aria-label={t('settings.apiTokenLimit')}
+            className="h-9 w-40 rounded-lg border border-input bg-transparent px-3 font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
+          />
+          <button
+            type="button"
+            onClick={saveLimit}
+            disabled={busy}
+            className="rounded-lg border px-3 py-2 text-xs transition-colors hover:bg-muted disabled:opacity-50"
+          >
+            {t('common.save')}
+          </button>
+          <span className="text-xs text-muted-foreground">{t('settings.tokensPerMinute')}</span>
+        </div>
+      </Row>
+
+      <Row label={t('settings.userApiKeys')}>
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={createKey}
+            disabled={busy}
+            className="rounded-lg bg-foreground px-3 py-2 text-xs font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {t('settings.createApiKey')}
+          </button>
+          {newToken && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-muted/30 p-3">
+              <code className="min-w-0 flex-1 break-all text-xs">{newToken}</code>
+              <button
+                type="button"
+                onClick={copyToken}
+                aria-label={t('common.copy')}
+                className="rounded-md p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Copy className="size-4" />
+              </button>
+              <p className="w-full text-xs text-muted-foreground">{t('settings.apiKeyShownOnce')}</p>
+            </div>
+          )}
+          <ul className="space-y-2">
+            {keys.map(key => (
+              <li key={key.id} className="flex flex-wrap items-center gap-3 rounded-xl border px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium">{key.label}</p>
+                  <p className="font-mono text-[10px] text-muted-foreground">{key.prefix}</p>
+                </div>
+                {key.revokedAt ? (
+                  <span className="text-[10px] text-muted-foreground">{t('settings.revoked')}</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => revokeKey(key.id)}
+                    disabled={busy}
+                    aria-label={`${t('settings.revoke')} ${key.label}`}
+                    className="rounded-md p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Row>
+      {error && <p role="alert" className="mt-4 text-xs text-destructive">{error}</p>}
+      {notice && <p role="status" className="mt-4 text-xs text-muted-foreground">{notice}</p>}
+    </>
+  )
+}
+
 export function SettingsDialog({
   open,
   onOpenChange,
@@ -587,7 +778,7 @@ export function SettingsDialog({
   const [section, setSection] = useState<SectionId>('general')
   const state = useCompressionSettings(open)
   const { config, busy, error, save } = state
-  const compressionSection = section !== 'general'
+  const compressionSection = section === 'compression' || section === 'advanced' || section === 'preview'
   const loading = compressionSection && !config && busy === 'load'
 
   return (
@@ -635,6 +826,7 @@ export function SettingsDialog({
           {/* min-height keeps the popup from resizing as sections are switched. */}
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:min-h-[27rem] sm:px-6 sm:py-6">
             {section === 'general' && <GeneralSection />}
+            {section === 'api-access' && <ApiAccessSection />}
             {loading && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" />

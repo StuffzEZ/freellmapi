@@ -27,6 +27,8 @@ import { backupsRouter } from './routes/backups.js';
 import { cacheRouter } from './routes/cache.js';
 import { compressionRouter } from './routes/compression.js';
 import { authRouter } from './routes/auth.js';
+import { accountRouter } from './routes/account.js';
+import { oidcRouter } from './routes/oidc.js';
 import { docsRouter } from './routes/docs.js';
 import { mcpRouter } from './routes/mcp.js';
 import { statusRouter, providersRouter } from './routes/status.js';
@@ -36,7 +38,9 @@ import { urlTokenRouter } from './routes/url-tokens.js';
 import { updateRouter } from './routes/update.js';
 import { moderationRouter } from './routes/moderation.js';
 import { requireAuth } from './middleware/requireAuth.js';
+import { userApiAuth } from './middleware/userApiAuth.js';
 import { createProxyRateLimiter, createAdminRateLimiter } from './middleware/rateLimit.js';
+import { reserveUserTokens } from './services/user-access.js';
 
 // Password-guess ceiling for GET /api/keys/export. Deliberately low: a real
 // user exports keys occasionally, never ten times a minute.
@@ -236,6 +240,8 @@ export function createApp(config?: Config) {
   // session; everything else under /api/* requires a logged-in dashboard user.
   // The /v1 proxy keeps its own unified-API-key auth and is NOT gated here.
   app.use('/api/auth', authRouter);
+  app.use('/api/auth/oidc', oidcRouter);
+  app.use('/api/account', requireAuth, accountRouter);
 
   // Key export re-verifies the dashboard password, which makes it the one admin
   // endpoint a guesser can attack. The broad limiter above is sized for normal
@@ -286,12 +292,6 @@ export function createApp(config?: Config) {
   // owns those two paths; everything else falls through to the routers below.
   app.use('/v1', docsRouter);
 
-  // Read-only per-upstream status for meta-gateways (GET /v1/providers, #433).
-  // Unified-key auth is enforced inside the handler; mounted before the rate
-  // limiter (like docsRouter) so status polling doesn't draw down a caller's
-  // request budget.
-  app.use('/v1', providersRouter);
-
   // Separately revocable URL tokens for clients that cannot set headers.
   app.use('/v1/t/:token', createProxyRateLimiter(cfg.proxyRateLimitRpm));
   app.use('/v1/t/:token', urlTokenRouter);
@@ -300,6 +300,10 @@ export function createApp(config?: Config) {
   // it throttles unauthenticated brute-force / flood attempts before any
   // routing work. Tune via PROXY_RATE_LIMIT_RPM; 0 disables it.
   app.use('/v1', createProxyRateLimiter(cfg.proxyRateLimitRpm));
+  app.use('/v1', userApiAuth);
+  app.use('/v1/chat/completions', enforceUserTokenLimit);
+  // Read-only per-upstream status for meta-gateways (GET /v1/providers, #433).
+  app.use('/v1', providersRouter);
   // Anthropic-compatible Messages API (`POST /v1/messages`, `/count_tokens`) for
   // Claude Code and anything else speaking the Anthropic SDK. Mounted BEFORE the
   // OpenAI router so it can content-negotiate `GET /v1/models` (Anthropic shape
@@ -314,6 +318,7 @@ export function createApp(config?: Config) {
 
   // Native Gemini wire surface for Gemini CLI and Gemini-lineage agents.
   app.use('/v1beta', createProxyRateLimiter(cfg.proxyRateLimitRpm));
+  app.use('/v1beta', userApiAuth);
   app.use('/v1beta', geminiRouter);
 
   // MCP server (Model Context Protocol over stateless Streamable HTTP):
@@ -322,6 +327,7 @@ export function createApp(config?: Config) {
   // /v1 (its own bucket): both surfaces guard the same unified key, so an
   // unauthenticated brute-force must not get a free throttle-less oracle here.
   app.use('/mcp', createProxyRateLimiter(cfg.proxyRateLimitRpm));
+  app.use('/mcp', userApiAuth);
   app.use('/mcp', mcpRouter);
 
   // Liveness / readiness probes for orchestrators (GET /livez, /readyz, #433).
@@ -379,4 +385,35 @@ export function createApp(config?: Config) {
   }
 
   return app;
+}
+
+function enforceUserTokenLimit(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+): void {
+  const userId = (req as express.Request & { user?: { userId: number } }).user?.userId;
+  if (userId == null || req.method !== 'POST') {
+    next();
+    return;
+  }
+
+  const promptTokens = Math.ceil(JSON.stringify(req.body ?? {}).length / 4);
+  const rawCompletionTokens = req.body?.max_completion_tokens ?? req.body?.max_tokens ?? 1024;
+  const completionTokens = Number.isFinite(Number(rawCompletionTokens))
+    ? Math.max(0, Math.min(1_000_000, Math.floor(Number(rawCompletionTokens))))
+    : 1024;
+  const reservation = reserveUserTokens(userId, Math.max(1, promptTokens) + completionTokens);
+  if (!reservation.allowed) {
+    res.setHeader('Retry-After', String(reservation.retryAfterSeconds));
+    res.status(429).json({
+      error: {
+        message: `Per-user token limit exceeded (${reservation.used}/${reservation.limit} tokens in the current minute)`,
+        type: 'rate_limit_error',
+        code: 'user_token_limit_exceeded',
+      },
+    });
+    return;
+  }
+  next();
 }

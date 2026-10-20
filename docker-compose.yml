@@ -19,8 +19,9 @@ services:
       # own Watchtower, and keeps theirs off this one.
       com.centurylinklabs.watchtower.enable: "true"
       com.centurylinklabs.watchtower.scope: freellmapi
-    # Bound to localhost by default — FreeLLMAPI is single-user and must not be
-    # exposed to the internet. Set HOST_BIND=0.0.0.0 to reach it from your LAN.
+    # Bound to localhost by default. For remote multi-user access, configure
+    # Authentik OIDC and HTTPS at a reverse proxy before exposing the service.
+    # Set HOST_BIND=0.0.0.0 to reach it from your LAN.
     ports:
       - "${HOST_BIND:-127.0.0.1}:${PORT:-3001}:3001"
     volumes:

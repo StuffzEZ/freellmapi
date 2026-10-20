@@ -200,6 +200,7 @@ function normModel(model: string | undefined): string {
 export function computeCacheKey(input: CacheKeyInput): string {
   const canonical = stableStringify({
     v: 4, // explicit-but-default-valued sampling params dropped from the key
+    namespace: cacheNamespace(),
     model: normModel(input.model),
     messages: input.messages,
     temperature: input.temperature,
@@ -226,6 +227,20 @@ export function computeCacheKey(input: CacheKeyInput): string {
     compression: input.compression,
   });
   return crypto.createHash('sha256').update(canonical).digest('hex');
+}
+
+const inMemoryCacheNamespaces = new WeakMap<object, number>();
+let nextInMemoryCacheNamespace = 1;
+
+function cacheNamespace(): string {
+  const db = getDb();
+  if (db.name && db.name !== ':memory:') return db.name;
+  let namespace = inMemoryCacheNamespaces.get(db);
+  if (namespace === undefined) {
+    namespace = nextInMemoryCacheNamespace++;
+    inMemoryCacheNamespaces.set(db, namespace);
+  }
+  return `connection-${namespace}`;
 }
 
 // Normalizes a sampling param that was passed explicitly but equals the API

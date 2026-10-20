@@ -44,6 +44,7 @@ interface AuthStatus {
   authenticated: boolean
   email: string | null
   desktop?: boolean
+  oidcEnabled?: boolean
 }
 
 function Centered({ children }: { children: ReactNode }) {
@@ -56,7 +57,17 @@ function Centered({ children }: { children: ReactNode }) {
   )
 }
 
-function AuthForm({ mode, onAuthed }: { mode: 'setup' | 'login'; onAuthed: () => void }) {
+function AuthForm({
+  mode,
+  onAuthed,
+  oidcEnabled,
+  oidcError,
+}: {
+  mode: 'setup' | 'login'
+  onAuthed: () => void
+  oidcEnabled?: boolean
+  oidcError?: string
+}) {
   const { t } = useI18n()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -191,11 +202,26 @@ function AuthForm({ mode, onAuthed }: { mode: 'setup' | 'login'; onAuthed: () =>
               {error}
             </p>
           )}
+          {oidcError && (
+            <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {oidcError}
+            </p>
+          )}
           <Button type="submit" className="w-full h-10" disabled={busy}>
             {busy && <Loader2 className="animate-spin" aria-hidden />}
             {busy ? (isSetup ? t('auth.creating') : t('auth.signingIn')) : isSetup ? t('auth.createAccount') : t('auth.signIn')}
           </Button>
         </form>
+        {oidcEnabled && (
+          <Button
+            type="button"
+            variant="outline"
+            className="mt-3 w-full"
+            onClick={() => window.location.assign('/api/auth/oidc/login')}
+          >
+            {t('auth.authentikSignIn')}
+          </Button>
+        )}
         {!isSetup && (
           <button
             type="button"
@@ -462,6 +488,31 @@ export function AuthGate({ children }: { children: ReactNode }) {
     queryFn: () => apiFetch('/api/auth/status'),
     retry: false,
   })
+  const [oidcPending, setOidcPending] = useState(() =>
+    typeof window !== 'undefined' && new URLSearchParams(window.location.hash.slice(1)).has('oidc_code'),
+  )
+  const [oidcError, setOidcError] = useState('')
+
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.hash.slice(1)).get('oidc_code')
+    if (!code) return
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+    let active = true
+    apiFetch<{ token: string }>('/api/auth/oidc/exchange', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }).then(result => {
+      if (!active) return
+      setToken(result.token)
+      queryClient.invalidateQueries()
+      return refetch()
+    }).catch(reason => {
+      if (active) setOidcError(reason instanceof Error ? reason.message : t('common.unknownError'))
+    }).finally(() => {
+      if (active) setOidcPending(false)
+    })
+    return () => { active = false }
+  }, [queryClient, refetch, t])
 
   useEffect(() => {
     const handler = () => { refetch() }
@@ -512,6 +563,16 @@ export function AuthGate({ children }: { children: ReactNode }) {
       </Centered>
     )
   }
+  if (oidcPending) {
+    return (
+      <Centered>
+        <p className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          {t('auth.loading')}
+        </p>
+      </Centered>
+    )
+  }
   if (isError || !data) {
     return (
       <Centered>
@@ -534,9 +595,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
     return <Centered><p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" aria-hidden />{t('auth.loading')}</p></Centered>
   }
-  if (data.needsSetup) return <AuthForm mode="setup" onAuthed={onAuthed} />
-  if (!data.authenticated) return <AuthForm mode="login" onAuthed={onAuthed} />
+  if (data.needsSetup) return <AuthForm mode="setup" onAuthed={onAuthed} oidcEnabled={data.oidcEnabled} oidcError={oidcError} />
+  if (!data.authenticated) return <AuthForm mode="login" onAuthed={onAuthed} oidcEnabled={data.oidcEnabled} oidcError={oidcError} />
 
   return <>{children}</>
 }
-
