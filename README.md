@@ -154,6 +154,7 @@ Based on public documentation, July 2026 — corrections welcome.
 - **Sticky sessions & context handoff** — conversations stay on one model for 30 minutes; an optional compact handoff note keeps the thread coherent when a mid-chat switch does happen. [Details →](docs/en/clients/01-agent-clients.md#context-handoff)
 - **Prompt compression (opt-in)** — a shared, fail-open request pipeline can deduplicate prompts, filter tool output, compact repeated JSON, and trim stale context before cache lookup and routing. [Details →](docs/en/compression/01-compression-pipeline.md)
 - **Encrypted keys, one token out** — provider keys are AES-256-GCM encrypted in SQLite and decrypted in-memory per request; your apps only ever see a single unified `freellmapi-…` bearer token.
+- **Multi-user & per-user keys (optional)** — enable Authentik OIDC to give each user an isolated database; each user can create multiple revocable API keys in **Settings → API access**, each with its own token-per-minute limit.
 - **Admin dashboard & analytics** — React UI to manage keys, reorder the chain, run a playground, and read p50/p95/TTFT analytics over 24h–90d windows; login-gated, dark/light themes, [60 languages](#languages).
 - **ChatGPT-ready MCP server & interactive docs** — ChatGPT and other MCP clients can call FreeLLMAPI inference, list usable models, inspect provider health/usage/cache/routing metadata, and manage the routing strategy over `/mcp`; a dependency-free OpenAPI viewer lives at `/v1/docs`. [ChatGPT and coding agents →](docs/en/clients/01-agent-clients.md#mcp-server)
 - **Ops niceties** — opt-in response cache, encrypted DB backups, periodic key health checks, bulk key import/export, declarative startup config. [Install & deploy →](docs/en/install/01-install.md)
@@ -189,7 +190,7 @@ For macOS 12 Monterey or later, choose **arm64 (Apple Silicon)** or **x64 (Intel
 
 ## Works with OpenAI-compatible clients
 
-Anything that can target an OpenAI-compatible base URL works: set it to `http://localhost:3001/v1` with the unified key from the dashboard. Every generator supports `--dry-run`; `npx freellmapi launch` (Claude Code) and `launch-codex` (Codex) keep credentials out of config files entirely. The router also doubles as an MCP server your agents can introspect mid-session.
+Anything that can target an OpenAI-compatible base URL works: set it to `http://localhost:3001/v1` with the unified key from the dashboard. VS Code users can point Continue, Cline, Roo Code, Kilo Code, or GitHub Copilot at the same URL (see the client docs for setup), and OpenRouter models can be added through the custom provider with **Fetch models**. Every generator supports `--dry-run`; `npx freellmapi launch` (Claude Code) and `launch-codex` (Codex) keep credentials out of config files entirely. The router also doubles as an MCP server your agents can introspect mid-session.
 
 **ChatGPT** connects to the same local router through a private Secure MCP Tunnel. The
 `ask_freellmapi` MCP tool routes a ChatGPT-requested task through `/v1/chat/completions` and
@@ -200,7 +201,11 @@ MCP URL. **[ChatGPT setup →](docs/en/clients/01-agent-clients.md#chatgpt-priva
 
 Provider keys can be managed from the terminal too, with a dashboard session token (`FREELLMAPI_DASHBOARD_TOKEN` or `--token`): `npx freellmapi keys add|list|remove|test <platform>`, where `keys test` re-checks stored keys. See [cli/README.md](cli/README.md#provider-keys).
 
-FreeLLMAPI is local-first and single-user by design. Your provider keys stay in your SQLite database, encrypted at rest, and requests go from your machine to the upstream providers you enabled.
+FreeLLMAPI is local-first by design. Your provider keys stay in your SQLite database, encrypted at rest, and requests go from your machine to the upstream providers you enabled. It runs as a single-user router out of the box; for multi-user access, enable Authentik OIDC and issue per-user API keys from **Settings → API access** (one account can hold several revocable keys, each with its own token-per-minute limit).
+
+## Multi-user login (Authentik)
+
+Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, and `OIDC_REDIRECT_URI` in `.env` to enable OIDC sign-in. Each user gets an isolated database; create client API keys under **Settings → API access** and use them as the Bearer token for `/v1`. See [docs/en/deployment/01-docker.md#multi-user-authentik-login](docs/en/deployment/01-docker.md#multi-user-authentik-login).
 
 ## Languages
 
@@ -273,7 +278,7 @@ client = OpenAI(
 )
 
 resp = client.chat.completions.create(
-    model="auto",  # let the router pick; or "auto:fast", "auto:smart", a profile, or a model id
+    model="auto",  # let the router pick; or a specific model id, "auto:fast"/"auto:fastest", "auto:smart"/"auto:smartest", a named profile, or "fusion"
     messages=[{"role": "user", "content": "Summarise the fall of Rome in one sentence."}],
 )
 print(resp.choices[0].message.content)

@@ -428,9 +428,24 @@ put either API key in the YAML file, MCP URL, screenshots, logs, or commits. A p
 deployment is a different security model and needs a stable public HTTPS endpoint plus the
 authentication required by ChatGPT; the private tunnel above is the local-first path.
 
-FreeLLMAPI is local-first and single-user by design. Your provider keys stay in
-your SQLite database, encrypted at rest, and requests go from your machine to the
-upstream providers you enabled.
+FreeLLMAPI is local-first by design. Your provider keys stay in your SQLite
+database, encrypted at rest, and requests go from your machine to the upstream
+providers you enabled. It runs single-user out of the box; multi-user access is
+available through Authentik OIDC, with per-user databases and revocable API keys
+(see the Docker guide).
+
+## VS Code
+
+Point any VS Code extension that speaks the OpenAI protocol at FreeLLMAPI:
+
+- **Continue** (chat + autocomplete): set `apiBase` to `http://localhost:3001/v1`
+  and `apiKey` to your unified key; see the ghost-text example below.
+- **Cline / Roo Code / Kilo Code**: run `npx freellmapi setup-cline` (or
+  `setup-roo` / `setup-kilo`) and reload VS Code.
+- **GitHub Copilot (custom OpenAI provider)**: base URL `http://localhost:3001/v1`,
+  API key your unified key, and `auto` (or any model id from `/v1/models`) as
+  the model. Multiple keys per user are supported, so each developer can use
+  their own revocable key.
 
 ## VS Code ghost-text autocomplete (Continue)
 

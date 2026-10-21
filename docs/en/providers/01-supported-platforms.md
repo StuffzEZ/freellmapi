@@ -26,7 +26,7 @@ Of the 43 built-in platforms, **10 use dedicated adapters** and **33 ride `OpenA
 | `nvidia` | NVIDIA NIM | Keyed | OpenAI-compat | `parallel_tool_calls` pinned false (#255); 180s timeout doubles as streaming first-byte grace (#584). |
 | `mistral` | Mistral | Keyed | OpenAI-compat | `api.mistral.ai/v1`. |
 | `sambanova` | SambaNova | Retired (V23) | Not registered | Free tier permanently gone; kept in the type union for historical key rows. |
-| `openrouter` | OpenRouter | Keyed | OpenAI-compat | Sends `HTTP-Referer`/`X-Title` headers; `:free` model suffix marks zero-cost routes. |
+| `openrouter` | OpenRouter | Keyed | OpenAI-compat | Sends `HTTP-Referer`/`X-Title` headers; `:free` model suffix marks zero-cost routes. Additional OpenRouter models can be added through the custom provider (use **Fetch models**). |
 | `cohere` | Cohere | Keyed | Native (`CohereProvider`) | Uses Cohere's OpenAI-compatible endpoint. |
 | `cloudflare` | Cloudflare Workers AI | Keyed (`account_id:token`) | Native (`CloudflareProvider`) | Compound credential format parsed by the adapter. |
 | `zhipu` | Zhipu (Z.ai / bigmodel.cn) | Keyed | Native (`ZhipuProvider`) | Console autodetect: a rejected domestic key is re-probed against the global `api.z.ai` host; 60s timeout covers glm-4.7-flash hidden reasoning. |
