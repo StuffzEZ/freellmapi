@@ -191,7 +191,7 @@ export function desktopSignInAllowed(req: Request): boolean {
 authRouter.get('/status', (req: Request, res: Response) => {
   const session = validateSession(bearer(req));
   res.json({
-    needsSetup: userCount() === 0,
+    needsSetup: !oidcEnabled() && userCount() === 0,
     authenticated: !!session,
     email: session?.email ?? null,
     desktop: desktopSignInAllowed(req),
@@ -210,6 +210,10 @@ authRouter.post('/desktop-session', (req: Request, res: Response) => {
 // First-run account creation. Only allowed while there are zero users, so it
 // can't be used to add accounts once the dashboard is claimed.
 authRouter.post('/setup', (req: Request, res: Response) => {
+  if (oidcEnabled()) {
+    res.status(403).json({ error: { message: 'Local setup is disabled while Authentik login is enabled.', type: 'oidc_only' } });
+    return;
+  }
   if (userCount() > 0) {
     clearSetupCode();
     res.status(409).json({ error: { message: 'Setup already completed. Use login instead.', type: 'setup_complete' } });
@@ -243,6 +247,10 @@ authRouter.post('/setup', (req: Request, res: Response) => {
 });
 
 authRouter.post('/login', (req: Request, res: Response) => {
+  if (oidcEnabled()) {
+    res.status(403).json({ error: { message: 'Local login is disabled while Authentik login is enabled.', type: 'oidc_only' } });
+    return;
+  }
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { message: parsed.error.errors.map(e => e.message).join(', ') } });

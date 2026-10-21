@@ -73,8 +73,10 @@ async function getMetadata(config: OidcConfig): Promise<OidcMetadata> {
   const response = await fetch(discoveryUrl, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error(`OIDC discovery returned HTTP ${response.status}`);
   const metadata = await response.json() as Partial<OidcMetadata>;
+  const normalizeIssuer = (value: string) => value.trim().replace(/\/+$/, '');
   if (
-    metadata.issuer !== config.issuer ||
+    typeof metadata.issuer !== 'string' ||
+    normalizeIssuer(metadata.issuer) !== normalizeIssuer(config.issuer) ||
     typeof metadata.authorization_endpoint !== 'string' ||
     typeof metadata.token_endpoint !== 'string' ||
     typeof metadata.jwks_uri !== 'string'
@@ -169,10 +171,10 @@ export async function exchangeOidcCode(
   if (jwksCache?.uri !== metadata.jwks_uri) {
     jwksCache = { uri: metadata.jwks_uri, keys: createRemoteJWKSet(new URL(metadata.jwks_uri)) };
   }
-  const { payload } = await jwtVerify(tokens.id_token, jwksCache.keys, {
-    issuer: config.issuer,
-    audience: config.clientId,
-  });
+   const { payload } = await jwtVerify(tokens.id_token, jwksCache.keys, {
+     issuer: [config.issuer, metadata.issuer].filter((value, index, items) => items.indexOf(value) === index),
+     audience: config.clientId,
+   });
   if (typeof payload.sub !== 'string' || typeof payload.nonce !== 'string' || payload.nonce !== nonce) {
     throw new Error('OIDC ID token subject or nonce is invalid.');
   }

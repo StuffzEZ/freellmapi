@@ -69,7 +69,7 @@ async function main() {
   // First-run hardening: when the dashboard is still unclaimed, mint a one-time
   // setup code and log it. A loopback browser can finish setup without it; a
   // remote caller must supply it (see routes/auth.ts). Regenerated each boot.
-  if (userCount() === 0) {
+  if (!getOidcConfig() && userCount() === 0) {
     generateSetupCode();
   }
 
