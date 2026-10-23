@@ -301,6 +301,10 @@ const changeEmailSchema = z.object({
 });
 
 authRouter.post('/change-email', (req: Request, res: Response) => {
+  if (oidcEnabled()) {
+    res.status(403).json({ error: { message: 'Email changes are managed by Authentik.', type: 'oidc_only' } });
+    return;
+  }
   const session = validateSession(bearer(req));
   if (!session) {
     res.status(401).json({ error: { message: 'Authentication required', type: 'authentication_error' } });
@@ -343,6 +347,10 @@ const changePasswordSchema = z.object({
 });
 
 authRouter.post('/change-password', (req: Request, res: Response) => {
+  if (oidcEnabled()) {
+    res.status(403).json({ error: { message: 'Passwords are managed by Authentik.', type: 'oidc_only' } });
+    return;
+  }
   const session = validateSession(bearer(req));
   if (!session) {
     res.status(401).json({ error: { message: 'Authentication required', type: 'authentication_error' } });
@@ -374,6 +382,10 @@ authRouter.post('/change-password', (req: Request, res: Response) => {
 const RESET_CODE_MIN_INTERVAL_MS = 10_000;
 let lastResetCodeAt = 0;
 authRouter.post('/forgot-password', (_req: Request, res: Response) => {
+  if (oidcEnabled()) {
+    res.status(403).json({ error: { message: 'Password reset is disabled while Authentik login is enabled.', type: 'oidc_only' } });
+    return;
+  }
   // Always respond 200 regardless of account existence to avoid user enumeration.
   if (userCount() === 0) {
     res.json({ success: true });
@@ -397,6 +409,10 @@ const resetPasswordSchema = z.object({
 });
 
 authRouter.post('/reset-password', (req: Request, res: Response) => {
+  if (oidcEnabled()) {
+    res.status(403).json({ error: { message: 'Password reset is disabled while Authentik login is enabled.', type: 'oidc_only' } });
+    return;
+  }
   const parsed = resetPasswordSchema.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: { message: parsed.error.errors.map(e => e.message).join(', ') } });
