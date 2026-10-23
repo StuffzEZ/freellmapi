@@ -33,6 +33,21 @@ const SECTIONS = [
     title: 'OpenRouter models',
     body: `OpenRouter is a built-in provider (:free suffix marks zero-cost routes). Add more OpenRouter models through the custom provider using Fetch models, or add your OpenRouter key on Keys and pick models from the catalog.`,
   },
+  {
+    id: 'curated',
+    title: 'Curated best free providers',
+    body: `Recommended starting set: Google Gemini, Groq, Cerebras, OpenRouter, Cloudflare Workers AI, Mistral, NVIDIA NIM, HuggingFace. Add keys for these first; the router falls over automatically. Use auto:smart for quality, auto:fast for latency.`,
+  },
+  {
+    id: 'cloud',
+    title: 'Cloud / shared deployment',
+    body: `Set OIDC_* for Authentik SSO; each user gets an isolated DB. Persist the freellmapi-data volume and keep ENCRYPTION_KEY stable. Put behind HTTPS reverse proxy (Caddy/nginx) with TRUST_PROXY set. Multi-user: per-user API keys with token limits in Settings → API access.`,
+  },
+  {
+    id: 'tts-stt',
+    title: 'TTS & STT (roadmap)',
+    body: `Speech surfaces (/v1/audio/speech, /v1/audio/transcriptions) route across providers serving media models. Full TTS/STT provider expansion and model curation is in progress; current set includes SiliconFlow, Google, and custom OpenAI-compatible media endpoints.`,
+  },
 ]
 
 export default function DocsPage() {
@@ -41,7 +56,7 @@ export default function DocsPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <BookOpen className="size-5" />
-        <h1 className="text-2xl font-semibold">Documentation</h1>
+        <h1 className="text-2xl font-semibold">SFS Free AI Hub — Documentation</h1>
       </div>
       <p className="text-sm text-muted-foreground">
         In-app reference. Full guides live in the repo docs/ folder.
