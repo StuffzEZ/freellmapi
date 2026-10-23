@@ -835,7 +835,7 @@ export async function handleResponses(req: Request, res: Response): Promise<void
       }
       throw err;
     }
-    stickyStrategyKey = resolvedChain.strategyKey === 'auto' ? undefined : resolvedChain.strategyKey;
+    stickyStrategyKey = resolvedChain.alwaysFallback ? undefined : (resolvedChain.strategyKey === 'auto' ? undefined : resolvedChain.strategyKey);
     preferredModel = resolveStickyPreference(
       getStickyModel(messages, sessionIdHeader, stickyStrategyKey),
       resolvedChain.chain,
@@ -1473,7 +1473,7 @@ export async function handleResponses(req: Request, res: Response): Promise<void
           res.end();
 
           recordUpstreamSuccess(route, estimatedInputTokens + totalOutputTokens, state);
-          setStickyModel(messages, route.modelDbId, sessionIdHeader, stickyStrategyKey);
+          if (stickyStrategyKey) setStickyModel(messages, route.modelDbId, sessionIdHeader, stickyStrategyKey);
           traceRouteEvent('Responses', {
             event: 'ok',
             requestId: requestGroupId,
@@ -1598,7 +1598,7 @@ export async function handleResponses(req: Request, res: Response): Promise<void
       // tokens against the rate-limit ledger; promptTokens/completionTokens
       // above already carry the chars/4 estimate.
       recordUpstreamSuccess(route, result.usage?.total_tokens ?? (promptTokens + completionTokens), state);
-      setStickyModel(messages, route.modelDbId, sessionIdHeader, stickyStrategyKey);
+      if (stickyStrategyKey) setStickyModel(messages, route.modelDbId, sessionIdHeader, stickyStrategyKey);
 
       res.setHeader('X-Routed-Via', routedViaValue(route.platform, route.modelId));
       setFallbackHeaders(res, attempt, attemptLog);

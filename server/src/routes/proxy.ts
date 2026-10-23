@@ -2157,6 +2157,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
   if (isAutoModel(requestedModel)) {
     resolvedChain = resolveRoutingChain(requestedModel);
     strategyKey = resolvedChain.strategyKey;
+    if (resolvedChain.alwaysFallback) strategyKey = undefined;
   }
 
   // Context handoff only applies to auto-routed requests. Pinned-model requests
@@ -2781,7 +2782,7 @@ proxyRouter.post('/chat/completions', async (req: Request, res: Response) => {
             });
           }
 
-          setStickyModel(messages, route.modelDbId, sessionIdHeader, stickyStrategyKey);
+          if (stickyStrategyKey) setStickyModel(messages, route.modelDbId, sessionIdHeader, stickyStrategyKey);
           if (handoffMode !== 'off' && sessionKey) recordSuccessfulModel({ sessionKey, modelKey });
           // #797: remember this turn's thinking trace so the next request from
           // the same session can restore it (clients strip it on replay).

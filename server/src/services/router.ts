@@ -1291,6 +1291,8 @@ function orderChain(chain: ChainRow[], strategy: RoutingStrategy, sampled = true
 export interface ResolvedChain {
   chain: ChainRow[];
   strategyKey: string;
+  /** When true, ignore sticky-session pinning and always evaluate/fail over the full chain. */
+  alwaysFallback: boolean;
 }
 
 const GLOBAL_SORT_ALIASES: Record<string, string> = {
@@ -1437,18 +1439,28 @@ function activeChainOrThrow(db: Db): ChainRow[] {
 export function resolveRoutingChain(modelString: string | undefined): ResolvedChain {
   const db = getDb();
 
-  if (!modelString || modelString.toLowerCase() === 'auto') {
-    return { chain: activeChainOrThrow(db), strategyKey: 'auto' };
+  let base = modelString;
+  let alwaysFallback = false;
+  if (base) {
+    const lower = base.toLowerCase();
+    if (lower.endsWith('-afb')) {
+      alwaysFallback = true;
+      base = base.slice(0, -4);
+    }
   }
 
-  const lower = modelString.toLowerCase();
+  if (!base || base.toLowerCase() === 'auto') {
+    return { chain: activeChainOrThrow(db), strategyKey: 'auto', alwaysFallback };
+  }
+
+  const lower = base.toLowerCase();
   if (!lower.startsWith('auto:')) {
-    return { chain: activeChainOrThrow(db), strategyKey: 'auto' };
+    return { chain: activeChainOrThrow(db), strategyKey: 'auto', alwaysFallback };
   }
 
   const suffix = lower.slice('auto:'.length).trim();
   if (!suffix) {
-    return { chain: activeChainOrThrow(db), strategyKey: 'auto' };
+    return { chain: activeChainOrThrow(db), strategyKey: 'auto', alwaysFallback };
   }
 
   const globalAxis = GLOBAL_SORT_ALIASES[suffix];
@@ -1459,7 +1471,7 @@ export function resolveRoutingChain(modelString: string | undefined): ResolvedCh
       err.status = 400;
       throw err;
     }
-    return { chain, strategyKey: `auto:${globalAxis}` };
+    return { chain, strategyKey: `auto:${globalAxis}`, alwaysFallback };
   }
 
   const chain = getChainByProfileName(db, suffix);
@@ -1476,7 +1488,7 @@ export function resolveRoutingChain(modelString: string | undefined): ResolvedCh
     throw err;
   }
 
-  return { chain, strategyKey: `auto:${suffix}` };
+  return { chain, strategyKey: `auto:${suffix}`, alwaysFallback };
 }
 
 // Weights for the in-model key score (#580). Reliability dominates: the point

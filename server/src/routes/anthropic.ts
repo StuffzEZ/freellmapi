@@ -566,7 +566,7 @@ export async function handleMessages(req: Request, res: Response): Promise<void>
       resolvedChain = resolveRoutingChain(autoModelString);
       // Named auto:<profile> / auto:smart get their own sticky bucket. Plain
       // `auto` stays unscoped so Claude Code session affinity is unchanged.
-      strategyKey = resolvedChain.strategyKey === 'auto' ? undefined : resolvedChain.strategyKey;
+      strategyKey = resolvedChain.alwaysFallback ? undefined : (resolvedChain.strategyKey === 'auto' ? undefined : resolvedChain.strategyKey);
     } catch (err: any) {
       if (err?.status === 400) {
         sendError(res, 400, 'invalid_request_error', err.message);
@@ -782,7 +782,7 @@ export async function handleMessages(req: Request, res: Response): Promise<void>
       // Remember this model for the rest of the auto-routed session. A pin used
       // to make this a no-op (the pin fixed the model); a group pin still has a
       // provider choice to remember, recorded under the group's own scope.
-      if (!resolved.pinned || stickyScope) setStickyModel(messages, route.modelDbId, sessionId, stickyScope ?? strategyKey);
+      if (strategyKey && (!resolved.pinned || stickyScope)) setStickyModel(messages, route.modelDbId, sessionId, stickyScope ?? strategyKey);
 
       const anthropicResponse: AnthropicMessageResponse = {
         id: newMessageId(),
